@@ -1,10 +1,5 @@
 ﻿namespace ClassLibrary1
 {
-    public class Class1
-    {
-
-    }
-
     interface IClient
     {
         Task<IResponse> GetApplicationStatus(string id, CancellationToken cancellationToken);
@@ -49,14 +44,32 @@
 
         public Task<IApplicationStatus> GetApplicationStatus(string id)
         {
-            //TODO: place code here
-
-            return Task.CompletedTask;
-        }
-
-        Task<IApplicationStatusResponse> IHandler.GetApplicationStatus(string id)
-        {
-            throw new NotImplementedException();
+            var services = new IClient[] { _service1, _service2 };
+            var tasks = new Task<IApplicationStatus>[2];
+            for (int i = 0; i < 2; i++)
+            {
+                tasks[i] = Task.Run(() =>
+                {
+                    int triesCount = 0;
+                    while (true)
+                    {
+                        triesCount++;
+                        var task = services[i].GetApplicationStatus(id, new CancellationToken() { });
+                        task.Wait();
+                        var resp = task.Result;
+                        if (resp is RetryResponse response) Thread.Sleep((int)response.Delay.TotalMilliseconds);
+                        else
+                        {
+                            if (resp is SuccessResponse successResponse)
+                                return (IApplicationStatus)new SuccessStatus(successResponse.Id, successResponse.Status);
+                            else return (IApplicationStatus)new FailureStatus(DateTime.Now, triesCount);
+                        };
+                    }
+                });
+            }
+            int index = Task.WaitAny(tasks, 15000);
+            if (index < 0) return Task.FromResult((IApplicationStatus)new FailureStatus(null, 0));
+            return tasks[index];
         }
     }
 
